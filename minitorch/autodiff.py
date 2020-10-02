@@ -1,10 +1,12 @@
 import uuid
 
+from collections import deque
+
 
 def wrap_tuple(x):
     if isinstance(x, tuple):
         return x
-    return (x,)
+    return (x, )
 
 
 def unwrap_tuple(x):
@@ -48,12 +50,13 @@ class Variable:
     def derivative(self):
         return self._derivative
 
-    ## IGNORE
+    # IGNORE
     def __hash__(self):
         return hash(self._name)
 
     def _add_deriv(self, val):
-        assert self.history.is_leaf(), "Only leaf variables can have derivatives."
+        assert self.history.is_leaf(
+        ), "Only leaf variables can have derivatives."
         if self._derivative is None:
             self._derivative = self.zeros()
         self._derivative += val
@@ -73,7 +76,7 @@ class Variable:
     def expand(self, x):
         return x
 
-    ## IGNORE
+    # IGNORE
 
 
 class Context:
@@ -136,7 +139,6 @@ class FunctionBase:
     Call by :func:`FunctionBase.apply`.
 
     """
-
     @staticmethod
     def variable(raw, history):
         pass
@@ -154,9 +156,10 @@ class FunctionBase:
                 raw_vals.append(v)
         ctx = Context(not need_grad)
         c = cls.forward(ctx, *raw_vals)
-        assert isinstance(c, cls.data_type), "Expected return typ %s got %s" % (
-            cls.data_type,
-            type(c),
+        assert isinstance(c,
+                          cls.data_type), "Expected return typ %s got %s" % (
+                              cls.data_type,
+                              type(c),
         )
         back = None
         if need_grad:
@@ -180,7 +183,17 @@ class FunctionBase:
 
         """
         # TODO: Implement for Task 1.3.
-        raise NotImplementedError('Need to implement for Task 1.3')
+        var_with_deriv = []
+        # get derivatives from backward function
+        deriv = list(cls.backward(ctx, d_output))
+
+        # run a loop for the inputs, if not constant, store in  var_with_deriv
+        for i in range(len(inputs)):
+            if is_constant(inputs[i]):
+                continue
+            var = VariableWithDeriv(inputs[i], deriv[i])
+            var_with_deriv.append(var)
+        return var_with_deriv
 
 
 def is_leaf(val):
@@ -203,4 +216,30 @@ def backpropagate(final_variable_with_deriv):
            and its derivative that we want to propagate backward to the leaves.
     """
     # TODO: Implement for Task 1.4.
-    raise NotImplementedError('Need to implement for Task 1.4')
+    """
+    Using a deque for faster insertion and removal operations.
+    """
+    queue = deque([final_variable_with_deriv])
+
+    while len(queue) != 0:
+        current = queue.popleft()
+
+        # leaf node
+        if is_leaf(current.variable):
+            # add final derivative
+            current.variable._add_deriv(current.deriv)
+        # if not a leaf node
+        else:
+            # chain rule on last function
+            var_with_deriv = current.variable.history.backprop_step(
+                current.deriv)
+
+            for var in var_with_deriv:
+                var_in_queue = False
+                for elem in queue:
+                    if var.variable.name == elem.variable.name:
+                        elem.deriv += var.deriv
+                        var_in_queue = True
+
+                if not var_in_queue:
+                    queue.append(var)
